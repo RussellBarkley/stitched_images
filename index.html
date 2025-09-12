@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Deep Zoom — Stitched image sequence</title>
+  <script src="openseadragon/openseadragon.min.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; background:#111; color:#fff; font:14px/1.35 system-ui, Arial, sans-serif; }
+    #osd { position:absolute; inset:0; }
+    #label {
+      position:absolute; top:12px; left:50%; transform:translateX(-50%);
+      z-index:10; background:rgba(0,0,0,.55); padding:6px 12px; border-radius:8px;
+      pointer-events:none; user-select:none; font-weight:600; opacity:.95; max-width:80vw; text-align:center;
+    }
+  </style>
+</head>
+<body>
+  <div id="label">Loading…</div>
+  <div id="osd"></div>
+
+  <script>
+    // Ordered list of DZI sources and titles (relative to this index.html)
+    const sources = [
+      { url: 'Run72TR_bottom_left/Run72TR_bottom_left.dzi', title: 'Run72TR_bottom_left.tif' },
+      { url: 'Run63TR_top_right/Run63TR_top_right.dzi',     title: 'Run63TR_top_right.tif' },
+      { url: 'Run72BR_top_right/Run72BR_top_right.dzi',     title: 'Run72BR_top_right.tif' },
+      { url: 'Run68TR_top_right/Run68TR_top_right.dzi',     title: 'Run68TR_top_right.tif' },
+      { url: 'Run25BR_top_right/Run25BR_top_right.dzi',     title: 'Run25BR_top_right.tif' }
+    ];
+
+    const viewer = OpenSeadragon({
+      id: 'osd',
+      prefixUrl: 'openseadragon/images/',
+      sequenceMode: true,
+      tileSources: sources.map(s => s.url),
+      preserveViewport: true,
+      showNavigator: false
+    });
+
+    const labelEl = document.getElementById('label');
+
+    function updateLabel() {
+      const p = viewer.currentPage();
+      labelEl.textContent = (sources[p] && sources[p].title) ? sources[p].title : `Page ${p + 1}`;
+    }
+
+    viewer.addHandler('open', updateLabel);
+    viewer.addHandler('page', updateLabel);
+
+    // Optional keyboard navigation: ← / → to move; 1–5 to jump
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') viewer.nextPage();
+      else if (e.key === 'ArrowLeft') viewer.previousPage();
+      else if (/^[1-5]$/.test(e.key)) viewer.goToPage(parseInt(e.key, 10) - 1);
+    });
+  </script>
+</body>
+</html>
