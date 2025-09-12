@@ -19,19 +19,22 @@
   <div id="osd"></div>
 
   <script>
-    // Ordered list of DZI sources and titles (relative to this index.html)
+    // Helper: build "Folder/Folder.dzi"
+    const D = (name) => `${name}/${name}.dzi`;
+
+    // Point to the .DZI files inside their folders
     const sources = [
-      { url: 'Run72TR_bottom_left/Run72TR_bottom_left.dzi', title: 'Run72TR_bottom_left.tif' },
-      { url: 'Run63TR_top_right/Run63TR_top_right.dzi',     title: 'Run63TR_top_right.tif' },
-      { url: 'Run72BR_top_right/Run72BR_top_right.dzi',     title: 'Run72BR_top_right.tif' },
-      { url: 'Run68TR_top_right/Run68TR_top_right.dzi',     title: 'Run68TR_top_right.tif' },
-      { url: 'Run25BR_top_right/Run25BR_top_right.dzi',     title: 'Run25BR_top_right.tif' }
+      { url: D('Run72TR_bottom_left'), title: 'Run72TR_bottom_left.tif' },
+      { url: D('Run63TR_top_right'),   title: 'Run63TR_top_right.tif' },
+      { url: D('Run72BR_top_right'),   title: 'Run72BR_top_right.tif' },
+      { url: D('Run68TR_top_right'),   title: 'Run68TR_top_right.tif' },
+      { url: D('Run25BR_top_right'),   title: 'Run25BR_top_right.tif' }
     ];
 
     const viewer = OpenSeadragon({
       id: 'osd',
       prefixUrl: 'openseadragon/images/',
-      sequenceMode: true,
+      sequenceMode: sources.length > 1,
       tileSources: sources.map(s => s.url),
       preserveViewport: true,
       showNavigator: false
@@ -47,11 +50,21 @@
     viewer.addHandler('open', updateLabel);
     viewer.addHandler('page', updateLabel);
 
-    // Optional keyboard navigation: ← / → to move; 1–5 to jump
+    // Helpful error messages in-page
+    viewer.addHandler('open-failed', (e) => {
+      labelEl.textContent = `Open failed: ${e.message || 'unknown error'}`;
+      console.error('Open failed', e);
+    });
+    viewer.addHandler('tile-load-failed', (e) => {
+      labelEl.textContent = `Tile failed: ${e.message || 'HTTP error'} — ${e.tile?.url || ''}`;
+      console.error('Tile failed', e);
+    });
+
+    // Keyboard navigation: ← / → to move; 1–5 to jump
     window.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight') viewer.nextPage();
       else if (e.key === 'ArrowLeft') viewer.previousPage();
-      else if (/^[1-5]$/.test(e.key)) viewer.goToPage(parseInt(e.key, 10) - 1);
+      else if (/^[1-9]$/.test(e.key)) viewer.goToPage(Math.min(parseInt(e.key, 10) - 1, sources.length - 1));
     });
   </script>
 </body>
