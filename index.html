@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>Deep Zoom — Stitched image sequence</title>
   <script src="openseadragon/openseadragon.min.js"></script>
+  <script src="openseadragon/openseadragon-scalebar.js"></script>
   <style>
     html, body { height: 100%; margin: 0; background:#111; color:#fff; font:14px/1.35 system-ui, Arial, sans-serif; }
     #osd { position:absolute; inset:0; }
@@ -22,7 +23,7 @@
     // Helper: build "Folder/Folder.dzi"
     const D = (name) => `${name}/${name}.dzi`;
 
-    // Point to the .DZI files inside their folders
+    // Sequence of .dzi files (adjust as needed)
     const sources = [
       { url: D('Run72TR_bottom_left'), title: 'Run72TR_bottom_left.tif' },
       { url: D('Run63TR_top_right'),   title: 'Run63TR_top_right.tif' },
@@ -40,8 +41,24 @@
       showNavigator: false
     });
 
-    const labelEl = document.getElementById('label');
+    // ── Scale bar (8.0453 px/µm → px/m) ───────────────────────────────
+    const PX_PER_MICRON = 8.0453;
+    const PX_PER_METER  = Math.round(PX_PER_MICRON * 1e6); // ≈ 8,045,300
+    viewer.scalebar({
+      type: OpenSeadragon.ScalebarType.MAP,
+      pixelsPerMeter: PX_PER_METER,
+      location: OpenSeadragon.ScalebarLocation.BOTTOM_LEFT,
+      xOffset: 12,
+      yOffset: 12,
+      barThickness: 4,
+      color: 'white',
+      fontColor: 'white',
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      stayInsideImage: true
+    });
+    // ─────────────────────────────────────────────────────────────────
 
+    const labelEl = document.getElementById('label');
     function updateLabel() {
       const p = viewer.currentPage();
       labelEl.textContent = (sources[p] && sources[p].title) ? sources[p].title : `Page ${p + 1}`;
@@ -60,7 +77,7 @@
       console.error('Tile failed', e);
     });
 
-    // Keyboard navigation: ← / → to move; 1–5 to jump
+    // Keyboard navigation: ← / → to move; 1–9 to jump
     window.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight') viewer.nextPage();
       else if (e.key === 'ArrowLeft') viewer.previousPage();
