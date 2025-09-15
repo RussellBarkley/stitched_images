@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Deep Zoom — Stitched image sequence</title>
+  <title>Zoomify — Stitched image sequence (Microscopy)</title>
   <script src="openseadragon/openseadragon.min.js"></script>
   <script src="openseadragon/openseadragon-scalebar.js"></script>
   <style>
@@ -13,76 +13,141 @@
       z-index:10; background:rgba(0,0,0,.55); padding:6px 12px; border-radius:8px;
       pointer-events:none; user-select:none; font-weight:600; opacity:.95; max-width:80vw; text-align:center;
     }
+    #err {
+      position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+      background:rgba(200,0,0,.25); border:1px solid rgba(255,80,80,.5);
+      padding:6px 10px; border-radius:6px; max-width:90vw; font-size:12px; display:none;
+    }
   </style>
 </head>
 <body>
   <div id="label">Loading…</div>
   <div id="osd"></div>
+  <div id="err"></div>
 
   <script>
-    // Helper: build "Folder/Folder.dzi"
-    const D = (name) => `${name}/${name}.dzi`;
+    // ── Microscopy scale (edit this) ─────────────────────────────────────────────
+    // If you know microns-per-pixel instead, set MICRONS_PER_PIXEL and compute:
+    // const PIXELS_PER_MICRON = 1 / MICRONS_PER_PIXEL;
+    const PIXELS_PER_MICRON = 8.0453;               // px / µm  ← put your calibration here
+    const PIXELS_PER_METER  = PIXELS_PER_MICRON * 1e6; // px / m
 
-    // Sequence of .dzi files (adjust as needed)
-    const sources = [
-      { url: D('Run72TR_bottom_left'), title: 'Run72TR_bottom_left.tif' },
-      { url: D('Run63TR_top_right'),   title: 'Run63TR_top_right.tif' },
-      { url: D('Run72BR_top_right'),   title: 'Run72BR_top_right.tif' },
-      { url: D('Run68TR_top_right'),   title: 'Run68TR_top_right.tif' },
-      { url: D('Run25BR_top_right'),   title: 'Run25BR_top_right.tif' }
+    // EXACT folder names you have (each contains ImageProperties.xml + TileGroup*)
+    const folders = [
+      { dir: "Run72TR_bottom_left_zoomify", title: "Run72TR_bottom_left.tif" },
+      { dir: "Run63TR_top_right_zoomify",   title: "Run63TR_top_right.tif"   },
+      { dir: "Run72BR_top_right_zoomify",   title: "Run72BR_top_right.tif"   },
+      { dir: "Run68TR_top_right_zoomify",   title: "Run68TR_top_right.tif"   },
+      { dir: "Run25BR_top_right_zoomify",   title: "Run25BR_top_right.tif"   }
     ];
 
-    const viewer = OpenSeadragon({
-      id: 'osd',
-      prefixUrl: 'openseadragon/images/',
-      sequenceMode: sources.length > 1,
-      tileSources: sources.map(s => s.url),
-      preserveViewport: true,
-      showNavigator: false
-    });
-
-    // ── Scale bar (8.0453 px/µm → px/m) ───────────────────────────────
-    const PX_PER_MICRON = 8.0453;
-    const PX_PER_METER  = Math.round(PX_PER_MICRON * 1e6); // ≈ 8,045,300
-    viewer.scalebar({
-      type: OpenSeadragon.ScalebarType.MAP,
-      pixelsPerMeter: PX_PER_METER,
-      location: OpenSeadragon.ScalebarLocation.BOTTOM_LEFT,
-      xOffset: 12,
-      yOffset: 12,
-      barThickness: 4,
-      color: 'white',
-      fontColor: 'white',
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      stayInsideImage: true
-    });
-    // ─────────────────────────────────────────────────────────────────
-
     const labelEl = document.getElementById('label');
-    function updateLabel() {
-      const p = viewer.currentPage();
-      labelEl.textContent = (sources[p] && sources[p].title) ? sources[p].title : `Page ${p + 1}`;
+    const errEl   = document.getElementById('err');
+
+    // Robustly load Zoomify ImageProperties.xml (case variations just in case)
+    async function loadZoomifyProps(baseDir) {
+      const candidates = [
+        `${baseDir}/ImageProperties.xml`,
+        `${baseDir}/imageproperties.xml`
+      ];
+      let lastErr = null;
+      for (const url of candidates) {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) { lastErr = `${url} → HTTP ${res.status}`; continue; }
+          const text = await res.text();
+          const xml  = new DOMParser().parseFromString(text, "text/xml");
+          const props = xml.getElementsByTagName("IMAGE_PROPERTIES")[0];
+          if (!props) throw new Error("Missing <IMAGE_PROPERTIES>");
+          const width    = parseInt(props.getAttribute("WIDTH"));
+          const height   = parseInt(props.getAttribute("HEIGHT"));
+          const tileSize = parseInt(props.getAttribute("TILESIZE")) || 256;
+          const fileFormat = "jpg";  // change to "png" if you exported PNG tiles
+          return { width, height, tileSize, fileFormat };
+        } catch (e) {
+          lastErr = `${url} → ${e.message}`;
+        }
+      }
+      throw new Error(`Could not read ImageProperties.xml in ${baseDir}. Last: ${lastErr}`);
     }
 
-    viewer.addHandler('open', updateLabel);
-    viewer.addHandler('page', updateLabel);
+    async function buildTileSources(items) {
+      const out = [];
+      for (const it of items) {
+        const props = await loadZoomifyProps(it.dir);
+        out.push({
+          type: "zoomifytileservice",
+          tilesUrl: it.dir + "/",
+          width: props.width,
+          height: props.height,
+          tileSize: props.tileSize,
+          fileFormat: props.fileFormat
+        });
+      }
+      return out;
+    }
 
-    // Helpful error messages in-page
-    viewer.addHandler('open-failed', (e) => {
-      labelEl.textContent = `Open failed: ${e.message || 'unknown error'}`;
-      console.error('Open failed', e);
-    });
-    viewer.addHandler('tile-load-failed', (e) => {
-      labelEl.textContent = `Tile failed: ${e.message || 'HTTP error'} — ${e.tile?.url || ''}`;
-      console.error('Tile failed', e);
-    });
+    (async () => {
+      try {
+        const tileSources = await buildTileSources(folders);
 
-    // Keyboard navigation: ← / → to move; 1–9 to jump
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowRight') viewer.nextPage();
-      else if (e.key === 'ArrowLeft') viewer.previousPage();
-      else if (/^[1-9]$/.test(e.key)) viewer.goToPage(Math.min(parseInt(e.key, 10) - 1, sources.length - 1));
-    });
+        const viewer = OpenSeadragon({
+          id: 'osd',
+          prefixUrl: 'openseadragon/images/',
+          sequenceMode: tileSources.length > 1,
+          preserveViewport: true,
+          showNavigator: false,
+          tileSources
+        });
+
+        // ── Microscopy scalebar ────────────────────────────────────────────────
+        // Requires openseadragon-scalebar.js
+        viewer.scalebar({
+          type: OpenSeadragon.ScalebarType.MICROSCOPY,   // μm / mm labeling
+          pixelsPerMeter: PIXELS_PER_METER,
+          minWidth: "120px",
+          xOffset: 12,
+          yOffset: 12,
+          location: OpenSeadragon.ScalebarLocation.BOTTOM_LEFT,
+          stayInsideImage: true,
+          color: "#ffffff",
+          fontColor: "#ffffff",
+          backgroundColor: "rgba(0,0,0,0.5)",
+          barThickness: 3
+        });
+
+        function updateLabel() {
+          const p = viewer.currentPage();
+          const entry = folders[p];
+          labelEl.textContent = entry ? entry.title : `Page ${p + 1}`;
+        }
+        viewer.addHandler('open', updateLabel);
+        viewer.addHandler('page', updateLabel);
+
+        // Troubleshooting helpers
+        viewer.addHandler('tile-load-failed', (e) => {
+          errEl.style.display = 'block';
+          errEl.textContent = `Tile failed: ${e.message || 'HTTP error'} — ${e.tile?.url || ''}`;
+          console.error('Tile failed', e);
+        });
+        viewer.addHandler('open-failed', (e) => {
+          errEl.style.display = 'block';
+          errEl.textContent = `Open failed: ${e.message || 'unknown error'}`;
+          console.error('Open failed', e);
+        });
+
+        // Keyboard navigation: ← / → to move; 1–9 to jump
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowRight') viewer.nextPage();
+          else if (e.key === 'ArrowLeft') viewer.previousPage();
+          else if (/^[1-9]$/.test(e.key)) viewer.goToPage(Math.min(parseInt(e.key, 10) - 1, tileSources.length - 1));
+        });
+      } catch (e) {
+        errEl.style.display = 'block';
+        errEl.textContent = e.message;
+        console.error(e);
+      }
+    })();
   </script>
 </body>
 </html>
